@@ -27,14 +27,14 @@ class PINN_Model(tf.keras.Model):
         self.interface = Interface(coeff = 1e-5)
         self.act_coeff = tf.keras.Variable(1.0, trainable=True, dtype=config.real(tf))
     
-        self.Ga         = tf.constant(93.5, dtype=config.real(tf))
-        self.Pr         = tf.constant(4.61e-2, dtype=config.real(tf))
-        self.Bi         = tf.constant(4.78e-3, dtype=config.real(tf))
-        self.Pl_1       = tf.constant(2.33e-5, dtype=config.real(tf))
-        self.We         = tf.constant(2.56e-6, dtype=config.real(tf))
-        self.Ma         = tf.constant(2.00e+2, dtype=config.real(tf))
-        self.Tj         = tf.constant(3.00e+2, dtype=config.real(tf))
-        self.theta_a    = tf.constant(3.00/1923.0, dtype=config.real(tf))
+        self.Ga   = tf.constant(93.5,    dtype=config.real(tf))
+        self.Pr   = tf.constant(4.61e-2, dtype=config.real(tf))
+        self.Bi   = tf.constant(4.78e-3, dtype=config.real(tf))
+        self.Pl_in= tf.constant(2.33e-5, dtype=config.real(tf))
+        self.We   = tf.constant(2.56e-6, dtype=config.real(tf))
+        self.Ma   = tf.constant(2.00e+2, dtype=config.real(tf))
+        self.Tj   = tf.constant(3.00e+2, dtype=config.real(tf))
+        self.T_a  = tf.constant(300.00/1728.0, dtype=config.real(tf))
         
         self.lower_bounds = tf.constant([domain.xmin, domain.ymin, domain.tmin], dtype=config.real(tf))
         self.upper_bounds = tf.constant([domain.xmax, domain.ymax, domain.tmax], dtype=config.real(tf))
@@ -145,7 +145,7 @@ class PINN_Model(tf.keras.Model):
         Cnt = u_x + v_y 
         Nsx = (u*u_x + v*u_y) + p_x - (u_xx + u_yy)
         Nsy = (u*v_x + v*v_y) + p_y - (v_xx + v_yy)  + self.Ga 
-        Energy = T_t + u*T_x + v*T_y - (1/self.Pr)*(T_xx + T_yy) 
+        Energy = T_t + u*T_x + v*T_y - 1/(self.Pr)*(T_xx + T_yy) 
         
         return Cnt, Nsx, Nsy, Energy
 
@@ -199,16 +199,25 @@ class PINN_Model(tf.keras.Model):
         BC1 = u*nx + v*ny  # u \dot n = 0
         BC2 = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
        
-        L1 = 2.0 * u_x * nx  +  (u_y + v_x)*ny 
-        L2 = (u_y + v_x)* nx  +  2.0*v_y*ny     
+        S11 = 2.0*u_x
+        S12 = u_y + v_x
+        S22 = 2.0*v_y
         
-        t1 = -ny
-        t2 =  nx
-        R1 = t1
-        R2 = t2
+        L1 = S11* nx  +  S12*ny 
+        L2 = S12* nx  +  S22*ny     
+        
+        tx = -ny
+        ty =  nx
+        R1 = tx
+        R2 = ty
+        tangential = tx * L1 + ty * L2
+        temp_tan = tx * T_x + ty * T_y
+        
+        
         
         grad_T = T_x*nx + T_y*ny 
-        f_bT = grad_T + (self.Bi(T - T_a) )
+        W = self.laser_fn(x,y,RL_hat=0.15)
+        f_bT = grad_T + (self.Bi(T - self.T_a) + (1/self.Pl_in)*(T**4 - self.T_a**4) + W )
         BC31 = L1 - tau_jet*R1
         BC32 = L2 - tau_jet*R2
 

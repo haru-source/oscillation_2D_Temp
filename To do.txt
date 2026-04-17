@@ -5,5 +5,5 @@ To do
 ・
 
 PINN_Model
-self.theta_a    = tf.constant(3.00/1923.0, dtype=config.real(tf))
-        ってなに
+self.theta_a    = tf.constant(3.00/1923.0)はなぜ3/1923なのか
+R=2mmを前提にすると無次元数がずれるから再計算）
