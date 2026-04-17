@@ -137,12 +137,13 @@ class DomainSphere(Interval):
              theta = np.arccos(2.0*u2 - 1.0)
 
              
-             P2 = (3.0 * np.cos(theta)**2 - 1.0)
+            #  P2 = (3.0 * np.cos(theta)**2 - 1.0)
              cos_t = np.cos(t_fixed)
 
             #  Rmax_theta = self.R_theta(theta) * cos_t
 
-             Rmax_theta = 1.0 + self.a2 * P2 * cos_t
+            #  Rmax_theta = 1.0 + self.a2 * P2 * cos_t
+             Rmax_theta = 1.0 
             
              r = np.cbrt(u3) * Rmax_theta
              x, y= self.sphere_to_cartesian(r, theta)
