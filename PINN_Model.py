@@ -27,14 +27,15 @@ class PINN_Model(tf.keras.Model):
         self.interface = Interface(coeff = 1e-5)
         self.act_coeff = tf.keras.Variable(1.0, trainable=True, dtype=config.real(tf))
     
-        self.Ga   = tf.constant(93.5, dtype=config.real(tf))
-        self.Pr   = tf.constant(4.61e-2, dtype=config.real(tf))
-        self.Bi   = tf.constant(4.78e-3, dtype=config.real(tf))
-        self.Pl_1 = tf.constant(2.33e-5, dtype=config.real(tf))
-        self.We   = tf.constant(2.56e-6, dtype=config.real(tf))
-        self.Ma   = tf.constant(2.00e+2, dtype=config.real(tf))
-        self.Tj   = tf.constant(3.00e+2, dtype=config.real(tf))
-    
+        self.Ga         = tf.constant(93.5, dtype=config.real(tf))
+        self.Pr         = tf.constant(4.61e-2, dtype=config.real(tf))
+        self.Bi         = tf.constant(4.78e-3, dtype=config.real(tf))
+        self.Pl_1       = tf.constant(2.33e-5, dtype=config.real(tf))
+        self.We         = tf.constant(2.56e-6, dtype=config.real(tf))
+        self.Ma         = tf.constant(2.00e+2, dtype=config.real(tf))
+        self.Tj         = tf.constant(3.00e+2, dtype=config.real(tf))
+        self.theta_a    = tf.constant(3.00/1923.0, dtype=config.real(tf))
+        
         self.lower_bounds = tf.constant([domain.xmin, domain.ymin, domain.tmin], dtype=config.real(tf))
         self.upper_bounds = tf.constant([domain.xmax, domain.ymax, domain.tmax], dtype=config.real(tf))
     
@@ -96,6 +97,11 @@ class PINN_Model(tf.keras.Model):
         T = Y[:,3:4]
         return u, v, p, T
 
+    def laser_fn(x, y, RL_hat=0.15):
+        W = tf.exp(-(x**2) / (2.0 * RL_hat**2)) / (2.0 * np.pi * RL_hat**2)
+        upper_mask = tf.cast( y > 0.0, x.dtype)
+        return W*upper_mask
+    
     def Equations(self, x,y,t):
         with tf.GradientTape(persistent=True) as tape1:
             tape1.watch(x)
@@ -200,8 +206,9 @@ class PINN_Model(tf.keras.Model):
         t2 =  nx
         R1 = t1
         R2 = t2
+        
         grad_T = T_x*nx + T_y*ny 
-        f_bT = grad_T + ()
+        f_bT = grad_T + (self.Bi(T - T_a) )
         BC31 = L1 - tau_jet*R1
         BC32 = L2 - tau_jet*R2
 
