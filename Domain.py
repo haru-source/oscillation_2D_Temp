@@ -210,14 +210,8 @@ class DomainSphere(Interval):
         for t_fixed in time_list:
             #  u1 = np.random.uniform(0.0, 1.0-1e-6, size=Nbc).astype(config.real(np))
              u2 = np.random.uniform(0.0, 1.0, size=Nbc).astype(config.real(np))
-
              theta = np.arccos(2.0*u2 - 1.0)
-           
-             P2 = (3.0 * np.cos(theta)**2 - 1.0)
-             cos_t = np.cos(t_fixed)
-             
-             Rmax_theta = 1.0 + self.a2 * P2 * cos_t
-
+             Rmax_theta = 1.0 
              r = Rmax_theta
              x,y = self.sphere_to_cartesian(r, theta)
              t_array = np.full(Nbc, t_fixed)
@@ -245,9 +239,7 @@ class DomainSphere(Interval):
             
             # for phi in phi_list:
             for theta in theta_list:
-                    P2 = (3.0 * np.cos(theta)**2 - 1.0)
-                    Rmax_theta = 1.0 + self.a2 * P2 * cos_t
-                    
+                    Rmax_theta = 1.0                    
                     for r_theta in r_list:
                         r = r_theta * Rmax_theta
                         x, y = self.sphere_to_cartesian(r, theta)

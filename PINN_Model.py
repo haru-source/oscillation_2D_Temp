@@ -24,26 +24,24 @@ class PINN_Model(tf.keras.Model):
         self.numHiddenLayers = numHiddenLayers
         self.numNeurons      = numNeurons
         self.domain = domain
-
         self.interface = Interface(coeff = 1e-5)
-        
         self.act_coeff = tf.keras.Variable(1.0, trainable=True, dtype=config.real(tf))
-   
-        
-        # ----------- 物性値 (pre_run_main から受取る) -----------
-        self.Ga = tf.constant(93.5, dtype=config.real(tf))
-#        self.We = tf.constant(4.8e-10, dtype=config.real(tf))
-        self.We = tf.constant(4.8e-3, dtype=config.real(tf))
-        
+    
+        self.Ga   = tf.constant(93.5, dtype=config.real(tf))
+        self.Pr   = tf.constant(4.61e-2, dtype=config.real(tf))
+        self.Bi   = tf.constant(4.78e-3, dtype=config.real(tf))
+        self.Pl_1 = tf.constant(2.33e-5, dtype=config.real(tf))
+        self.We   = tf.constant(2.56e-6, dtype=config.real(tf))
+        self.Ma   = tf.constant(2.00e+2, dtype=config.real(tf))
+        self.Tj   = tf.constant(3.00e+2, dtype=config.real(tf))
+    
         self.lower_bounds = tf.constant([domain.xmin, domain.ymin, domain.tmin], dtype=config.real(tf))
         self.upper_bounds = tf.constant([domain.xmax, domain.ymax, domain.tmax], dtype=config.real(tf))
-
-        # Define NN layers
+    
         self.hiddenLayers = []
-        
         for l in range(0, self.numHiddenLayers):
             self.hiddenLayers.append(tf.keras.layers.Dense(self.numNeurons, activation='tanh', name='Dense%s'%(l), dtype=config.real(tf)))
-        self.outputLayer = tf.keras.layers.Dense(3, activation=None, name='Output', dtype=config.real(tf))
+        self.outputLayer = tf.keras.layers.Dense(4, activation=None, name='Output', dtype=config.real(tf))
     
     #####################################
     ##    　　　NNの層の形状を構築　　  　##
@@ -95,7 +93,8 @@ class PINN_Model(tf.keras.Model):
         u = Y[:,0:1]
         v = Y[:,1:2]
         p = Y[:,2:3]
-        return u, v, p
+        T = Y[:,3:4]
+        return u, v, p, T
 
     def Equations(self, x,y,t):
         with tf.GradientTape(persistent=True) as tape1:
@@ -105,19 +104,23 @@ class PINN_Model(tf.keras.Model):
             with tf.GradientTape(persistent=True) as tape2:
                 tape2.watch(x)
                 tape2.watch(y)
-                u, v, p = self.net_field(x, y, t)
+                u, v, p, T = self.net_field(x, y, t)
         
             u_x = tape2.gradient(u, x)
             u_y = tape2.gradient(u, y)
+            u_t = tape2.gradient(u, t)
         
             v_x = tape2.gradient(v, x)
             v_y = tape2.gradient(v, y)
-        
+            v_t = tape2.gradient(v, t)
+            
             p_x = tape2.gradient(p, x)
             p_y = tape2.gradient(p, y)
 
-            # T_x = tape2.gradient(T, x)
-            # T_y = tape2.gradient(T, y)
+            T_x = tape2.gradient(T, x)
+            T_y = tape2.gradient(T, y)
+            T_t = tape2.gradient(T, t)
+            
 
             
         u_xx = tape1.gradient(u_x, x)
@@ -126,8 +129,8 @@ class PINN_Model(tf.keras.Model):
         v_xx = tape1.gradient(v_x, x)
         v_yy = tape1.gradient(v_y, y)
 
-        # T_xx = tape1.gradient(T_x, x)
-        # T_yy = tape1.gradient(T_y, y)
+        T_xx = tape1.gradient(T_x, x)
+        T_yy = tape1.gradient(T_y, y)
 
         
     
@@ -136,8 +139,9 @@ class PINN_Model(tf.keras.Model):
         Cnt = u_x + v_y 
         Nsx = (u*u_x + v*u_y) + p_x - (u_xx + u_yy)
         Nsy = (u*v_x + v*v_y) + p_y - (v_xx + v_yy)  + self.Ga 
+        Energy = T_t + u*T_x + v*T_y - (1/self.Pr)*(T_xx + T_yy) 
         
-        return Cnt, Nsx, Nsy
+        return Cnt, Nsx, Nsy, Energy
 
 
     ##########################################
@@ -166,21 +170,22 @@ class PINN_Model(tf.keras.Model):
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(x)
             tape.watch(y)
-            u, v, p = self.net_field(x, y, t)
-        ux = tape.gradient(u,x)
-        uy = tape.gradient(u,y)
-        vx = tape.gradient(v,x)
-        vy = tape.gradient(v,y)
+            u, v, p, T = self.net_field(x, y, t)
+        u_x = tape.gradient(u,x)
+        u_y = tape.gradient(u,y)
+        v_x = tape.gradient(v,x)
+        v_y = tape.gradient(v,y)
+        T_x = tape.gradient(T,x)
+        T_y = tape.gradient(T,y)
         del tape
 
-        nx, ny= self.interface.normal(x, y, t)
+        nx, ny = self.interface.normal(x, y, t)
         
-             # tg = - tf.math.sin(theta)
+        # tg = - tf.math.sin(theta)
         VSMALL = 1e-13
         rr = tf.sqrt(x*x + y*y)
         r2 = tf.sqrt(x*x + y*y)
         theta = tf.math.atan2(y, x)
-        
         
         p_jet = self.interface.P_jet(theta)
         tau_jet = self.interface.Tau_jet(theta)
@@ -188,16 +193,15 @@ class PINN_Model(tf.keras.Model):
         BC1 = u*nx + v*ny  # u \dot n = 0
         BC2 = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
        
-        L1 = 2.0 * ux * nx  +  (uy + vx)*ny 
-        L2 = (uy + vx)* nx  +  2.0*vy*ny     
+        L1 = 2.0 * u_x * nx  +  (u_y + v_x)*ny 
+        L2 = (u_y + v_x)* nx  +  2.0*v_y*ny     
         
         t1 = -ny
         t2 =  nx
         R1 = t1
         R2 = t2
-        
-   
-     
+        grad_T = T_x*nx + T_y*ny 
+        f_bT = grad_T + ()
         BC31 = L1 - tau_jet*R1
         BC32 = L2 - tau_jet*R2
 
