@@ -27,14 +27,14 @@ class PINN_Model(tf.keras.Model):
         self.interface = Interface(coeff = 1e-5)
         self.act_coeff = tf.keras.Variable(1.0, trainable=True, dtype=config.real(tf))
     
-        self.Ga   = tf.constant(93.5,    dtype=config.real(tf))
-        self.Pr   = tf.constant(4.61e-2, dtype=config.real(tf))
-        self.Bi   = tf.constant(4.78e-3, dtype=config.real(tf))
-        self.Pl_in= tf.constant(2.33e-5, dtype=config.real(tf))
-        self.We   = tf.constant(2.56e-6, dtype=config.real(tf))
-        self.Ma   = tf.constant(2.00e+2, dtype=config.real(tf))
-        self.Tj   = tf.constant(3.00e+2, dtype=config.real(tf))
-        self.T_a  = tf.constant(300.00/1728.0, dtype=config.real(tf))
+        self.Pr   = tf.constant(6.62e-2, dtype=config.real(tf))
+        self.Ga   = tf.constant(2.39e+1,    dtype=config.real(tf))
+        self.Ma   = tf.constant(4.1e+4, dtype=config.real(tf))
+        self.Bi   = tf.constant(4.57e-2, dtype=config.real(tf))
+        self.Pl   = tf.constant(4.66e+1, dtype=config.real(tf))
+        # self.We   = tf.constant(2.56e-6, dtype=config.real(tf))
+        # self.Tj   = tf.constant(3.00e+2, dtype=config.real(tf))
+        self.T_a  = tf.constant(300.00/1923.0, dtype=config.real(tf))
         
         self.lower_bounds = tf.constant([domain.xmin, domain.ymin, domain.tmin], dtype=config.real(tf))
         self.upper_bounds = tf.constant([domain.xmax, domain.ymax, domain.tmax], dtype=config.real(tf))
@@ -196,47 +196,63 @@ class PINN_Model(tf.keras.Model):
         p_jet = self.interface.P_jet(theta)
         tau_jet = self.interface.Tau_jet(theta)
 
-        BC_cons = u*nx + v*ny  # u \dot n = 0
-        BC_nor = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
-       
-        BC_tan_1 = L1 - tau_jet*R1
-        BC_tan_2 = L2 - tau_jet*R2
+        BC_un = u*nx + v*ny  # u \dot n = 0
+        # BC_nor = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
+        BC_nor = 0
 
-        S11 = 2.0*u_x
-        S12 = u_y + v_x
-        S22 = 2.0*v_y
+   
+        t_xx = u_x + u_x
+        t_xy = u_y + v_x
+        t_yy = v_y * v_y
         
-        L1 = S11* nx  +  S12*ny 
-        L2 = S12* nx  +  S22*ny     
+        Snx = t_xx* nx  +  t_xy*ny 
+        Sny = t_xy* nx  +  t_yy*ny     
         
-        tx = -ny
-        ty =  nx
-        R1 = tx
-        R2 = ty
-        tangential = tx * L1 + ty * L2
-        BC_T_tan = tx * T_x + ty * T_y
+        Snx -= p*nx
+        Sny -= p*nx
+
+        ex = -ny
+        ey = nx
+        
+        tangential = ex * Snx + ey * Sny
+
+        BC_tan_1 = Snx - tau_jet*ex
+        BC_tan_2 = Sny - tau_jet*ey
+        Temp_tan = ex * T_x + ey * T_y
         
         
         
-        grad_T = T_x*nx + T_y*ny 
+        nabla_T = T_x*nx + T_y*ny 
         W = self.laser_fn(x,y,RL_hat=0.15)
-        f_bT = grad_T + (self.Bi*(T - self.T_a) + (1/self.Pl_in)*(T**4 - self.T_a**4) + W )
+        BC_ther = nabla_T + (self.Bi*(T - self.T_a) + (1/self.Pl)*(T**4 - self.T_a**4) + W )
+        BC_T_tan = tangential - (self.Ma/self.Pr) * Temp_tan
+
         
-        
-        BC_cons = tf.reduce_mean(tf.square(BC_cons))
+        BC_un = tf.reduce_mean(tf.square(BC_un))
         BC_nor = tf.reduce_mean(tf.square(BC_nor))
         BC_tan = tf.reduce_mean(tf.square(BC_tan_1)) \
             + tf.reduce_mean(tf.square(BC_tan_2)) \
             
         BC_T_tan = tf.reduce_mean(tf.square(BC_T_tan))
-        BC_T_tan = tf.reduce_mean(tf.square(BC_T_tan))
+        BC_ther = tf.reduce_mean(tf.square(BC_ther))
         
         
-        BC = BC_cons + BC_nor + BC_tan
+        
+        BC = BC_un + BC_nor + BC_tan + BC_T_tan + BC_ther 
+
+        return BC, BC_un, BC_nor, BC_tan, BC_T_tan, BC_ther
     
-        return BC, BC_cons, BC_nor, BC_tan
     
-    
+    def call_loss_initial(self,x,y,t,model):
+         u, v, p, T = self.net_field(tf.concat([x,y,t], axis=1))
+
+         f_u = u
+         f_v = v
+         f_T = T - 1.0   # 融点基準
+
+         return f_u, f_v, f_T
+
+
     # ##########################################
     def cal_loss_pRef(self):
         x0 = np.full((1,1), 1.0, dtype=config.real(np))
@@ -262,8 +278,8 @@ class PINN_Model(tf.keras.Model):
         dataBC_R = dataList[1]
 
         loss_GE = self.call_loss_GE(dataGE)
-        # BC_L, BC_cons_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_L)
-        BC_R, BC_cons_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_R)
+        # BC_L, BC_un_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_L)
+        BC_R, BC_un_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_R)
 
         loss_pRef = self.cal_loss_pRef() 
         # BC = BC_L + BC_R
@@ -275,7 +291,7 @@ class PINN_Model(tf.keras.Model):
         return loss_value
 
     def sub_loss_labels(self):        
-        return ["GE", "BC", "BC_cons", "BC_nor", "BC_tan", "pRef"]
+        return ["GE", "BC", "BC_un", "BC_nor", "BC_tan", "BC_T_tan", "BC_ther", "pRef"]
 
 
     ###################################
@@ -285,23 +301,23 @@ class PINN_Model(tf.keras.Model):
         dataBC_Right = dataList[1]
 
         loss_GE = self.call_loss_GE(dataGE)
-        # BC_L, BC_cons_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_Left)
-        BC_R, BC_cons_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_Right)
+        # BC_L, BC_un_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_Left)
+        BC_R, BC_un_R, BC_nor_R, BC_tan_R, BC_T_tan, BC_ther = self.call_loss_BC_Right(dataBC_Right)
         loss_pRef = self.cal_loss_pRef()
         
         # BC1 = BC1_L + BC1_R
         # BC2 = BC2_L + BC2_R
         # BC3 = BC3_L + BC3_R
-        BC_cons =  BC_cons_R
+        BC_un =  BC_un_R
         BC_nor =  BC_nor_R
         BC_tan =  BC_tan_R
         
-        BC = BC_cons+ BC_nor + BC_tan
+        BC = BC_un+ BC_nor + BC_tan + BC_T_tan + BC_ther
         
         loss_value = loss_GE + BC + loss_pRef
 
 
-        return loss_value, [loss_GE, BC, BC_cons, BC_nor, BC_tan, loss_pRef]
+        return loss_value, [loss_GE, BC, BC_un, BC_nor, BC_tan, loss_pRef]
 
 
 ##############
