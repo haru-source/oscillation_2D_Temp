@@ -138,9 +138,9 @@ if __name__ == "__main__":
     x_eval = Grid_points[:,0:1]
     y_eval = Grid_points[:,1:2]
     t_eval = Grid_points[:,2:3]
-    u, v, p = model.net_field(x_eval, y_eval, t_eval)
-    arrayForOutput = np.hstack((x_eval, y_eval, t_eval, u, v, p))
-    np.savetxt('{:}/new_result_{:05d}.tsv'.format(out_dir, solver.get_iter()), arrayForOutput, fmt = '%.6e', delimiter = '\t', newline = '\r\n', header='x \t y \t t \t u \t v \t w \t p')
+    u, v, p, T = model.net_field(x_eval, y_eval, t_eval)
+    arrayForOutput = np.hstack((x_eval, y_eval, t_eval, u, v, p, T))
+    np.savetxt('{:}/new_result_{:05d}.tsv'.format(out_dir, solver.get_iter()), arrayForOutput, fmt = '%.6e', delimiter = '\t', newline = '\r\n', header='x \t y \t t \t u \t v \t p \t T')
     
     
 

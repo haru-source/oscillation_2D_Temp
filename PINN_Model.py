@@ -143,8 +143,8 @@ class PINN_Model(tf.keras.Model):
         del tape1, tape2
         
         Cnt = u_x + v_y 
-        Nsx = (u*u_x + v*u_y) + p_x - (u_xx + u_yy)
-        Nsy = (u*v_x + v*v_y) + p_y - (v_xx + v_yy)  + self.Ga 
+        Nsx = u_t + (u*u_x + v*u_y) + p_x - (u_xx + u_yy)
+        Nsy = v_t + (u*v_x + v*v_y) + p_y - (v_xx + v_yy)  + self.Ga 
         Energy = T_t + u*T_x + v*T_y - 1/(self.Pr)*(T_xx + T_yy) 
         
         return Cnt, Nsx, Nsy, Energy
@@ -196,9 +196,12 @@ class PINN_Model(tf.keras.Model):
         p_jet = self.interface.P_jet(theta)
         tau_jet = self.interface.Tau_jet(theta)
 
-        BC1 = u*nx + v*ny  # u \dot n = 0
-        BC2 = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
+        BC_cons = u*nx + v*ny  # u \dot n = 0
+        BC_nor = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
        
+        BC_tan_1 = L1 - tau_jet*R1
+        BC_tan_2 = L2 - tau_jet*R2
+
         S11 = 2.0*u_x
         S12 = u_y + v_x
         S22 = 2.0*v_y
@@ -211,24 +214,27 @@ class PINN_Model(tf.keras.Model):
         R1 = tx
         R2 = ty
         tangential = tx * L1 + ty * L2
-        temp_tan = tx * T_x + ty * T_y
+        BC_T_tan = tx * T_x + ty * T_y
         
         
         
         grad_T = T_x*nx + T_y*ny 
         W = self.laser_fn(x,y,RL_hat=0.15)
-        f_bT = grad_T + (self.Bi(T - self.T_a) + (1/self.Pl_in)*(T**4 - self.T_a**4) + W )
-        BC31 = L1 - tau_jet*R1
-        BC32 = L2 - tau_jet*R2
-
-        BC1 = tf.reduce_mean(tf.square(BC1))
-        BC2 = tf.reduce_mean(tf.square(BC2))
-        BC3 = tf.reduce_mean(tf.square(BC31)) \
-            + tf.reduce_mean(tf.square(BC32)) \
+        f_bT = grad_T + (self.Bi*(T - self.T_a) + (1/self.Pl_in)*(T**4 - self.T_a**4) + W )
         
-        BC = BC1 + BC2 + BC3
+        
+        BC_cons = tf.reduce_mean(tf.square(BC_cons))
+        BC_nor = tf.reduce_mean(tf.square(BC_nor))
+        BC_tan = tf.reduce_mean(tf.square(BC_tan_1)) \
+            + tf.reduce_mean(tf.square(BC_tan_2)) \
+            
+        BC_T_tan = tf.reduce_mean(tf.square(BC_T_tan))
+        BC_T_tan = tf.reduce_mean(tf.square(BC_T_tan))
+        
+        
+        BC = BC_cons + BC_nor + BC_tan
     
-        return BC, BC1, BC2, BC3
+        return BC, BC_cons, BC_nor, BC_tan
     
     
     # ##########################################
@@ -243,7 +249,7 @@ class PINN_Model(tf.keras.Model):
         t0 = tf.convert_to_tensor(t0, dtype=config.real(tf))
         
         sol = self.net_field(x0, y0, t0)
-        pp = sol[2]
+        pp = sol[2] #u,v,p,T=0,1,2,3でsol[2]で3番目を抽出
 
 
         loss_Pref = tf.reduce_mean(tf.square(pp))
@@ -256,8 +262,8 @@ class PINN_Model(tf.keras.Model):
         dataBC_R = dataList[1]
 
         loss_GE = self.call_loss_GE(dataGE)
-        # BC_L, BC1_L, BC2_L, BC3_L = self.call_loss_BC_Left(dataBC_L)
-        BC_R, BC1_R, BC2_R, BC3_R = self.call_loss_BC_Right(dataBC_R)
+        # BC_L, BC_cons_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_L)
+        BC_R, BC_cons_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_R)
 
         loss_pRef = self.cal_loss_pRef() 
         # BC = BC_L + BC_R
@@ -269,7 +275,7 @@ class PINN_Model(tf.keras.Model):
         return loss_value
 
     def sub_loss_labels(self):        
-        return ["GE", "BC", "BC1", "BC2", "BC3", "pRef"]
+        return ["GE", "BC", "BC_cons", "BC_nor", "BC_tan", "pRef"]
 
 
     ###################################
@@ -279,23 +285,23 @@ class PINN_Model(tf.keras.Model):
         dataBC_Right = dataList[1]
 
         loss_GE = self.call_loss_GE(dataGE)
-        # BC_L, BC1_L, BC2_L, BC3_L = self.call_loss_BC_Left(dataBC_Left)
-        BC_R, BC1_R, BC2_R, BC3_R = self.call_loss_BC_Right(dataBC_Right)
+        # BC_L, BC_cons_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_Left)
+        BC_R, BC_cons_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_Right)
         loss_pRef = self.cal_loss_pRef()
         
         # BC1 = BC1_L + BC1_R
         # BC2 = BC2_L + BC2_R
         # BC3 = BC3_L + BC3_R
-        BC1 =  BC1_R
-        BC2 =  BC2_R
-        BC3 =  BC3_R
+        BC_cons =  BC_cons_R
+        BC_nor =  BC_nor_R
+        BC_tan =  BC_tan_R
         
-        BC = BC1 + BC2 + BC3
+        BC = BC_cons+ BC_nor + BC_tan
         
         loss_value = loss_GE + BC + loss_pRef
 
 
-        return loss_value, [loss_GE, BC, BC1, BC2, BC3, loss_pRef]
+        return loss_value, [loss_GE, BC, BC_cons, BC_nor, BC_tan, loss_pRef]
 
 
 ##############
