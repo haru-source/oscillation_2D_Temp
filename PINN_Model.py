@@ -165,6 +165,23 @@ class PINN_Model(tf.keras.Model):
             loss_GE += tf.reduce_mean(tf.square(Eqns[ii]))
         
         return loss_GE
+    
+    def call_loss_IC(self,IC_Points):
+        x = IC_Points[:, 0:1]
+        y = IC_Points[:, 1:2]
+        t = IC_Points[:, 2:3]
+        u, v, p, T = self.net_field(tf.concat([x,y,t], axis=1))
+        f_u = u
+        f_v = v
+        f_T = T - 1.0   # 融点基準  
+        loss_u = tf.reduce_mean(tf.square(f_u))
+        loss_v = tf.reduce_mean(tf.square(f_v))
+        loss_T = tf.reduce_mean(tf.square(f_T))
+        
+        loss_IC = loss_u + loss_v + loss_T
+
+        return 
+        
 
         
     ##############
@@ -200,7 +217,6 @@ class PINN_Model(tf.keras.Model):
         # BC_nor = self.interface.curvature(x,y,t) - (p + p_jet) * self.We
         BC_nor = 0
 
-   
         t_xx = u_x + u_x
         t_xy = u_y + v_x
         t_yy = v_y * v_y
@@ -243,14 +259,7 @@ class PINN_Model(tf.keras.Model):
         return BC, BC_un, BC_nor, BC_tan, BC_T_tan, BC_ther
     
     
-    def call_loss_initial(self,x,y,t,model):
-         u, v, p, T = self.net_field(tf.concat([x,y,t], axis=1))
-
-         f_u = u
-         f_v = v
-         f_T = T - 1.0   # 融点基準
-
-         return f_u, f_v, f_T
+  
 
 
     # ##########################################
@@ -273,36 +282,41 @@ class PINN_Model(tf.keras.Model):
         return loss_Pref
 
     def loss_fn(self, dataList):
-        dataGE = dataList[0]                                  # shape: (N, 3)
+        dataGE   = dataList[0]                                  # shape: (N, 3)
         # dataBC_L = dataList[1]        
         dataBC_R = dataList[1]
+        dataIC   = dataList[2]
+        
 
         loss_GE = self.call_loss_GE(dataGE)
         # BC_L, BC_un_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_L)
-        BC_R, BC_un_R, BC_nor_R, BC_tan_R = self.call_loss_BC_Right(dataBC_R)
-
+        BC_R, "","","","","", = self.call_loss_BC_Right(dataBC_R)
+        loss_IC = self.call_loss_IC(dataIC)
         loss_pRef = self.cal_loss_pRef() 
         # BC = BC_L + BC_R
-        BC =  BC_R
+        loss_BC =  BC_R
         
 
-        loss_value = loss_GE + BC + loss_pRef
+        loss_value = loss_GE + loss_BC + loss_IC + loss_pRef
 
         return loss_value
 
     def sub_loss_labels(self):        
-        return ["GE", "BC", "BC_un", "BC_nor", "BC_tan", "BC_T_tan", "BC_ther", "pRef"]
+        return ["GE", "BC", "BC_un", "BC_nor", "BC_tan", "BC_T_tan", "BC_ther", "loss_IC", "pRef"]
 
 
     ###################################
     def loss_eval(self, dataList):
-        dataGE = dataList[0]                                  # shape: (N, 3)
+        dataGE       = dataList[0]                                  # shape: (N, 3)
         # dataBC_Left = dataList[1]        
         dataBC_Right = dataList[1]
+        dataIC       = dataList[2]
+        
 
-        loss_GE = self.call_loss_GE(dataGE)
+        loss_GE   = self.call_loss_GE(dataGE)
         # BC_L, BC_un_L, BC_nor_L, BC_tan_L = self.call_loss_BC_Left(dataBC_Left)
-        BC_R, BC_un_R, BC_nor_R, BC_tan_R, BC_T_tan, BC_ther = self.call_loss_BC_Right(dataBC_Right)
+        BC_R, BC_un_R, BC_nor_R, BC_tan_R, BC_T_tan_R, BC_ther_R = self.call_loss_BC_Right(dataBC_Right)
+        loss_IC   = self.call_loss_IC(dataIC)
         loss_pRef = self.cal_loss_pRef()
         
         # BC1 = BC1_L + BC1_R
@@ -311,13 +325,15 @@ class PINN_Model(tf.keras.Model):
         BC_un =  BC_un_R
         BC_nor =  BC_nor_R
         BC_tan =  BC_tan_R
+        BC_T_tan =  BC_T_tan_R
+        BC_ther =  BC_ther_R
         
-        BC = BC_un+ BC_nor + BC_tan + BC_T_tan + BC_ther
         
-        loss_value = loss_GE + BC + loss_pRef
+        loss_BC = BC_R
+        loss_value = loss_GE + loss_BC + loss_IC +  loss_pRef
 
 
-        return loss_value, [loss_GE, BC, BC_un, BC_nor, BC_tan, loss_pRef]
+        return loss_value, [loss_GE, loss_BC, BC_un, BC_nor, BC_tan, loss_IC, loss_pRef]
 
 
 ##############

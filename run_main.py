@@ -85,7 +85,7 @@ if __name__ == "__main__":
     IC_points = domain.genInitialPoint(Nf, Nt, out_dir)
     
     
-    dataList  = [GE_points, BC_points. IC_points]    
+    dataList  = [GE_points, BC_points, IC_points]    
     solver = SolverSciPy(model, out_dir=out_dir, iter_ini=iter_last)
 
     start = time.time()
