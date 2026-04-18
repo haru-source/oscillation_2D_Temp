@@ -82,9 +82,10 @@ if __name__ == "__main__":
     
     GE_points = domain.genResidualPoints(Nf,Nt,out_dir)
     BC_points = domain.genBoundaryPoints(Nbc,Nt,out_dir)
+    IC_points = domain.genInitialPoint(Nf, Nt, out_dir)
     
     
-    dataList  = [GE_points, BC_points]    
+    dataList  = [GE_points, BC_points. IC_points]    
     solver = SolverSciPy(model, out_dir=out_dir, iter_ini=iter_last)
 
     start = time.time()
@@ -137,10 +138,11 @@ if __name__ == "__main__":
     Grid_points = domain.genGirdPoints(Nr_eval, Nq_eval, Nt_eval,out_dir="output_Grid")
     x_eval = Grid_points[:,0:1]
     y_eval = Grid_points[:,1:2]
-    t_eval = Grid_points[:,2:3]
-    u, v, p, T = model.net_field(x_eval, y_eval, t_eval)
-    arrayForOutput = np.hstack((x_eval, y_eval, t_eval, u, v, p, T))
-    np.savetxt('{:}/new_result_{:05d}.tsv'.format(out_dir, solver.get_iter()), arrayForOutput, fmt = '%.6e', delimiter = '\t', newline = '\r\n', header='x \t y \t t \t u \t v \t p \t T')
+    z_eval = Grid_points[:,2:3]
+    t_eval = Grid_points[:,3:4]
+    u, v, p, T = model.net_field(x_eval, y_eval, z_eval, t_eval)
+    arrayForOutput = np.hstack((x_eval, y_eval, z_eval, t_eval, u, v, p, T))
+    np.savetxt('{:}/new_result_{:05d}.tsv'.format(out_dir, solver.get_iter()), arrayForOutput, fmt = '%.6e', delimiter = '\t', newline = '\r\n', header='x \t y \t z \t t \t u \t v \t p \t T')
     
     
 

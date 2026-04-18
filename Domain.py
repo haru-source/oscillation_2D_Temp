@@ -221,7 +221,16 @@ class DomainSphere(Interval):
         BC_points = np.vstack(all_data)
         np.savetxt('{:}/BC_points.tsv'.format(out_dir), BC_points, fmt='%16.8e', delimiter='\t', header='x\ty\tz\tt', comments='')
         return tf.convert_to_tensor(BC_points, config.real(tf))
-            
+    
+    def genInitialPoint(self, Nf, Nt, out_dir):
+        x_ge, y_ge, t_ge = self.genResidualPoints(Nf, Nt, out_dir)
+        x = x_ge.numpy() if isinstance(x_ge, tf.Tensor) else x_ge
+        y = y_ge.numpy() if isinstance(y_ge, tf.Tensor) else y_ge
+        t0 = np.zeros_like(x)
+        IC_points = np.hstack([x, y, t0])
+        return tf.convert_to_tensor(IC_points, dtype=config.real(tf))
+    
+
 
     def genGirdPoints(self, Nr, Nq, Nt, out_dir):
         
@@ -235,7 +244,7 @@ class DomainSphere(Interval):
         
         for t_fixed in t_list:
             
-            cos_t = np.cos(t_fixed)
+            # cos_t = np.cos(t_fixed)
             
             # for phi in phi_list:
             for theta in theta_list:
@@ -243,9 +252,9 @@ class DomainSphere(Interval):
                     for r_theta in r_list:
                         r = r_theta * Rmax_theta
                         x, y = self.sphere_to_cartesian(r, theta)
-                        data.append([x, y, t_fixed])
-              
-    
+                        # data.append([x, y, t_fixed])
+                        z = 0.0
+                        data.append([x, y, z, t_fixed])
         data = np.array(data)
         Grid_points = np.array(data)
         np.savetxt('{:}/Grid_points.tsv'.format(out_dir), Grid_points, fmt='%16.8e', delimiter='\t', header='x\ty\tz\tt', comments='')
